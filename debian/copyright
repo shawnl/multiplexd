@@ -1,0 +1,7 @@
+Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Contact: Shawn Landden <shawn@churchofgit.com>
+Source: http://github.com/shawnl/multiplexd
+
+Files: *
+Copyright: © 2014 Shawn Landden <shawn@churchofgit.com>
+License: GPL-3+

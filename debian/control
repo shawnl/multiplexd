@@ -1,0 +1,25 @@
+Source: multiplexd
+Section: util
+Priority: optional
+Maintainer: Shawn Landden <shawn@churchofgit.com>
+Build-Depends: debhelper (>= 9),
+ dh-golang,
+ dh-systemd,
+ golang,
+ gccgo
+Standards-Version: 3.9.4
+Vcs-Git: https://github.com/shawnl/multiplexd.git
+Vcs-Browser: https://github.com/shawnl/multiplexd
+Homepage: https://github.com/shawnl/multiplexd
+
+Package: multiplexd
+Section: util
+Architecture: all
+Depends: ${misc:Depends},
+         ${shlibs:Depends}
+Description: Run ssh, ssl, openvpn, and more from a single port
+ Multiplexd determines the type of connection from the first incoming packet of
+ a connection, and then forwards all connunication to the approiate service.
+
+ This is useful for transversing very tight firewalls that generally only
+ allow through unfiltered traffic on port 443.

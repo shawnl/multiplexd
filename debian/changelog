@@ -1,0 +1,5 @@
+multiplexd (0.1-1) unstable; urgency=low
+
+  * Initial release. (Closes: #XXXXXX)
+
+ -- Shawn Landden <shawn@churchofgit.com>  Mon, 03 Feb 2014 17:48:21 -0800

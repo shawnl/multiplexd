@@ -1,0 +1,7 @@
+#!/usr/bin/make -f
+
+export DH_OPTIONS
+export DH_GOPKG := github.com/shawnl/multiplexd
+
+%:
+	dh $@ --buildsystem=golang --with=systemd,golang
