@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"github.com/coreos/go-systemd/activation"
 )
 
 type matcher func(packet []byte, length int) (host string, port int)
@@ -21,7 +22,6 @@ func copyAndClose(w io.Writer, r io.ReadCloser) {
 }
 
 func handleConnection(c net.Conn, patterns []matcher) {
-	var err error
 	var d net.Conn
 	buf := make([]byte, 4096, 4096)
 	oobbuf := make([]byte, 512, 512)
@@ -38,25 +38,23 @@ func handleConnection(c net.Conn, patterns []matcher) {
 	f.Close()
 
 	for n := 0;;n += 1 {
-		var host string
-		var port int
-
 		if len(patterns) == n {
 			fmt.Println(c.RemoteAddr, "Protocol not recognized")
 			return
 		}
 
-		host, port = patterns[n](buf, length)
+		host, port := patterns[n](buf, length)
 		if port > 0 {
 			d, err = net.Dial("tcp", fmt.Sprint(host, ":", port))
+			if err != nil {
+				fmt.Println(c.RemoteAddr, err)
+				return
+			}
+
 			break
 		}
 	}
 
-	if err != nil {
-		fmt.Println(c.RemoteAddr, err)
-		return
-	}
 	go copyAndClose(c, d)
 	io.Copy(d, c)
 }
@@ -71,44 +69,58 @@ func parseHostPort(arg string) (host string, port int, err error) {
 	return arg[:strings.Index(arg, ":")], n, err
 }
 
+func handleListener(c net.Listener, patterns []matcher) {
+	for {
+		conn, err := c.Accept()
+		if err != nil {
+			fmt.Println("Accept failed:", err)
+			continue
+		}
+		go handleConnection(conn, patterns)
+	}
+}
+
+func usage() {
+	fmt.Println("multiplexd [[listenhost:]port..] [--ssl [host:]port|--ssh [host:]port|--openvpn [host:]port|--regex regex [host:]port..]")
+	os.Exit(1)
+}
+
 func main() {
 	var patterns []matcher
+	var n int
 
 	if len(os.Args) < 2 {
-		fmt.Println("multiplexd [listenhost:]port [--ssl [host:]port|--ssh [host:]port|--openvpn [host:]port|--regex regex [host:]port..]")
-		return
+		usage()
 	}
 
-	host, port, err := parseHostPort(os.Args[1])
-	if err != nil {
-		fmt.Println("Bad Listen host:port:", os.Args[1])
+	for n = 1;;n += 1 {
+		if bytes.Equal([]byte(os.Args[n])[:2], []byte("--")) {
+			break
+		}
+
+		if n == len(os.Args) - 1 {
+			usage()
+		}
 	}
 
-	if bytes.Compare([]byte(host), []byte("localhost")) == 0 {
-		host = "0.0.0.0"
-	}
+	firstFilterArg := n
 
-	ln, err := net.Listen("tcp", fmt.Sprint(host, ":", port))
-	if err != nil {
-		fmt.Println("Listen failed:", err)
-		os.Exit(1)
-	}
-
-	for n := 2; n < len(os.Args)-1; n += 2 {
+	for ;n < len(os.Args) - 1; n += 2 {
 		if bytes.Equal([]byte(os.Args[n]), []byte("--regex")) {
 			if len(os.Args) < n+2 {
-				return
+				fmt.Println("Not enough arguments to --regex")
+				os.Exit(1)
 			}
 			host, port, err := parseHostPort(os.Args[n+2])
 			if err != nil {
 				fmt.Println("Bad host:port specification:", os.Args[n+2], host, port, err)
-				return
+				os.Exit(1)
 			}
 
 			r, err := regexp.Compile(os.Args[n+1])
 			if err != nil {
 				fmt.Println("Failed to compile regular expression:", os.Args[n+1], err)
-				return
+				os.Exit(1)
 			}
 
 			patterns = append(patterns, (func(packet []byte, length int) (h string, p int) {
@@ -126,7 +138,7 @@ func main() {
 		host, port, err := parseHostPort(os.Args[n+1])
 		if err != nil {
 			fmt.Println("Bad host:port specification:", os.Args[n+1], host, port, err)
-			return
+			os.Exit(1)
 		}
 		if bytes.Equal([]byte(os.Args[n]), []byte("--ssh")) {
 			patterns = append(patterns, (func(packet []byte, length int) (h string, p int) {
@@ -157,12 +169,42 @@ func main() {
 		}
 	}
 
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			fmt.Println("Accept failed:", err)
-			continue
+	listeners, err := activation.Listeners(true)
+
+	if err != nil {
+		panic(err)
+	}
+
+	// If we recieved any sockets from systemd do not open our own listeners
+	if len(listeners) > 0 {
+		for _, ln := range listeners {
+			go handleListener(ln, patterns)
 		}
-		go handleConnection(conn, patterns)
+	} else {
+		if firstFilterArg == 1 {
+			fmt.Println("No listen port(s) specified and did not recieve and not being systemd socket activated")
+			os.Exit(1)
+		}
+
+		for n = 1;n < firstFilterArg;n += 1 {
+			host, port, err := parseHostPort(os.Args[n])
+
+			if err != nil {
+				fmt.Println("Bad Listen host:port:", os.Args[n])
+				break
+			}
+
+			if bytes.Compare([]byte(host), []byte("localhost")) == 0 {
+				host = "0.0.0.0"
+			}
+
+			ln, err := net.Listen("tcp", fmt.Sprint(host, ":", port))
+			if err != nil {
+				fmt.Println("Listen failed:", err)
+				break
+			}
+
+			go handleListener(ln, patterns)
+		}
 	}
 }

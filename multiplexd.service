@@ -1,0 +1,8 @@
+[Unit]
+Description=Multiplex multiple services onto a single port
+
+[Service]
+ExecStart=/usr/bin/multiplexd --ssl 4443 --ssh 22 --openvpn 943
+User=multiplexd
+NoNewPrivileges=yes
+
